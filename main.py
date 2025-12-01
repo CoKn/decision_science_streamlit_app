@@ -4,7 +4,7 @@ import base64
 import bcrypt
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
-
+import pandas as pd
 
 st.set_page_config(
     page_title="Social Media vs Attention",
@@ -62,6 +62,12 @@ def load_data() -> "st.dataframe":  # type: ignore[valid-type]
 
     conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read(worksheet="Sheet1", ttl="10m", usecols=[1, 2])
+    # Coerce both columns to numeric; drop rows where either is not a valid number.
+    if df is not None and not df.empty:
+        try:
+            df[df.columns[0]] = st.utils.to_numpy(df[df.columns[0]])  # type: ignore[attr-defined]
+        except Exception:
+            pass
     return df
 
 def show_data_page() -> None:
@@ -81,12 +87,14 @@ def show_data_summary_page() -> None:
     col_attention = df.columns[0]
     col_usage = df.columns[1]
 
+    # Only keep rows where both columns are valid numbers
+    cleaned = df[[col_attention, col_usage]].apply(pd.to_numeric, errors="coerce").dropna()
+    if cleaned.empty:
+        st.info("All entries are non-numeric; nothing to summarize yet.")
+        return
+
     st.subheader("Summary statistics")
-    st.write(
-        df.describe(
-            include="all",
-        )[[col_attention, col_usage]]
-    )
+    st.write(cleaned.describe())
 
 
 def show_analytics_page() -> None:
@@ -100,9 +108,15 @@ def show_analytics_page() -> None:
     col_attention = df.columns[0]
     col_usage = df.columns[1]
 
+    # Drop rows with non-numeric values before plotting
+    cleaned = df[[col_attention, col_usage]].apply(pd.to_numeric, errors="coerce").dropna()
+    if cleaned.empty:
+        st.info("All entries are non-numeric; nothing to plot yet.")
+        return
+
     st.subheader("Attention Span vs. Social Media Ussage")
     st.scatter_chart(
-        df,
+        cleaned,
         x=col_attention,
         y=col_usage,
     )
